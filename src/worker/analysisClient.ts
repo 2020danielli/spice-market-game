@@ -1,4 +1,4 @@
-import type { LineStep, OpponentModel, RootStat } from '../bots/ismcts';
+import type { LineStep, OpponentModel, RootStat, SearchParams } from '../bots/ismcts';
 import type { Move, PlayerView } from '../engine';
 import type { AnalysisUpdate } from './analysisWorker';
 import type { WorkerLike } from './botClient';
@@ -71,7 +71,7 @@ export class AnalysisClient {
     private readonly factory: () => WorkerLike = defaultFactory,
   ) {}
 
-  start(view: PlayerView, opponent: OpponentModel, maxMs: number, onUpdate: (s: AnalysisSnapshot) => void): void {
+  start(view: PlayerView, opponent: OpponentModel, maxMs: number, onUpdate: (s: AnalysisSnapshot) => void, params?: SearchParams): void {
     this.stop();
     const workers = this.workers ?? (this.workers = Array.from({ length: this.count }, () => this.factory()));
     const id = ++this.runId;
@@ -92,7 +92,7 @@ export class AnalysisClient {
           moves: mergeStats(got.map((x) => x.stats)),
         });
       };
-      w.postMessage({ type: 'start', id, view, opponent, seed: id * 7919 + i * 104729 + 1, maxMs });
+      w.postMessage({ type: 'start', id, view, opponent, seed: id * 7919 + i * 104729 + 1 + Math.floor(Math.random() * 1e6), maxMs, params });
     });
   }
 
@@ -106,5 +106,36 @@ export class AnalysisClient {
     this.stop();
     for (const w of this.workers ?? []) w.terminate();
     this.workers = null;
+  }
+}
+
+/** Final move from merged evals: most-visited, near-ties (≥60% of the top visits) broken by win + margin. */
+export function pickMove(moves: readonly MoveEval[], marginWeight = 0.3): Move | null {
+  if (moves.length === 0) return null;
+  const top = moves.reduce((a, b) => (b.visits > a.visits ? b : a));
+  const score = (m: MoveEval) => (1 - marginWeight) * m.winRate + marginWeight * (0.5 + 0.5 * Math.tanh(m.margin / 15));
+  return moves.filter((m) => m.visits >= 0.6 * top.visits).reduce((a, b) => (score(b) > score(a) ? b : a)).move;
+}
+
+/** Master bot: root-parallel search on several workers for a fixed time, then one merged decision. */
+export class ParallelBot {
+  private readonly pool: AnalysisClient;
+  constructor(count = defaultWorkerCount(), factory?: () => WorkerLike) {
+    this.pool = factory ? new AnalysisClient(count, factory) : new AnalysisClient(count);
+  }
+  decide(view: PlayerView, params: SearchParams, ms: number): Promise<Move> {
+    return new Promise((resolve) => {
+      this.pool.start(view, 'strong', ms, (snap) => {
+        if (!snap.done) return;
+        const m = pickMove(snap.moves, params.marginWeight);
+        if (m) resolve(m);
+      }, params);
+    });
+  }
+  cancel(): void {
+    this.pool.stop();
+  }
+  dispose(): void {
+    this.pool.dispose();
   }
 }

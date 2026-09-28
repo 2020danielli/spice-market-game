@@ -33,8 +33,8 @@ export function Menu({ onStart }: { onStart: (s: GameSetup) => void }) {
   const [tier, setTier] = useState<Tier>('medium');
   const [south, setSouth] = useState<Tier>('hard');
   const [north, setNorth] = useState<Tier>('medium');
-  const [camelTiebreak, setCamelTiebreak] = useState(false);
-  const [showKnown, setShowKnown] = useState(true);
+  const [camelTiebreak, setCamelTiebreak] = useState(true);
+  const [showKnown, setShowKnown] = useState(false);
   const [seedText, setSeedText] = useState('');
 
   const start = () => {
@@ -103,6 +103,31 @@ export function Menu({ onStart }: { onStart: (s: GameSetup) => void }) {
           <button className="btn primary big" onClick={start}>{mode === 'play' ? 'Start match' : 'Start watching'}</button>
         </div>
       </div>
+
+      <details className="panel rules">
+        <summary>About the bots</summary>
+        <p>
+          Every bot sees only what a player at the table could see: your hand stays hidden, and the search bots count the
+          cards that have gone by to guess what you and the deck are holding.
+        </p>
+        <table className="bot-table">
+          <thead>
+            <tr><th>Bot</th><th>How it decides</th><th>Thinks for</th><th>Strength</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><b>Easy</b></td><td>A third of the time plays like Medium, otherwise a random move.</td><td>instant</td><td>For learning the rules.</td></tr>
+            <tr><td><b>Medium</b></td><td>Scores every move with one formula (set values, camels, what the market leaves you) and plays the best.</td><td>instant</td><td>Solid, but never plans ahead.</td></tr>
+            <tr><td><b>Hard</b></td><td>Searches thousands of possible futures (Monte Carlo tree search over guesses of the hidden cards). Early in the round it scores positions with a quick formula; near the end it plays each line out, with endgame rules: it ends the round when that wins it and cashes in when you could end it.</td><td>~1 s</td><td>Beats Medium ~7 rounds in 10.</td></tr>
+            <tr><td><b>Expert</b></td><td>Searches with a neural network that learned to judge positions from hundreds of thousands of self-play positions, and solves the endgame exactly (it samples your likely hands and calculates every line to the end).</td><td>~4 s</td><td>Beats the previous Expert ~56–71% and Medium 92%.</td></tr>
+            <tr><td><b>Master</b></td><td>Expert's search spread over several CPU cores, with twice the time.</td><td>~8 s</td><td>Beats Expert slightly; the strongest before Grandmaster.</td></tr>
+            <tr><td><b>Grandmaster</b></td><td>AlphaZero-style, trained over three rounds of self-play: a network suggests which moves to search first, a stronger position network judges them, and a third network reads your hand from how you've played this round (what you took, passed on, traded and sold) to guess your hidden cards. Solves the endgame exactly.</td><td>~8 s</td><td>The strongest: beats Master 62% of rounds (65–39) and Medium 92%. The game has real luck, so it still drops rounds — play best of 3.</td></tr>
+          </tbody>
+        </table>
+        <p className="muted small">
+          Measured in bot-vs-bot rounds. Even perfect play loses some rounds to the draw, so no bot wins every time — take a
+          best-of-3 over a single round.
+        </p>
+      </details>
 
       <details className="panel rules">
         <summary>How to play</summary>

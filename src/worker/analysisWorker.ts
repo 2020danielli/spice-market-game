@@ -1,9 +1,9 @@
 import { ANALYSIS_PARAMS } from '../bots';
-import { IsmctsSearch, type OpponentModel, type RootStat } from '../bots/ismcts';
+import { IsmctsSearch, type OpponentModel, type RootStat, type SearchParams } from '../bots/ismcts';
 import { Rng, type PlayerView } from '../engine';
 
 export type AnalysisRequest =
-  | { type: 'start'; id: number; view: PlayerView; opponent: OpponentModel; seed: number; maxMs: number }
+  | { type: 'start'; id: number; view: PlayerView; opponent: OpponentModel; seed: number; maxMs: number; params?: SearchParams }
   | { type: 'stop'; id: number };
 
 export interface AnalysisUpdate {
@@ -47,7 +47,7 @@ ctx.onmessage = (e) => {
   }
   const current: Job = {
     id: msg.id,
-    search: new IsmctsSearch(msg.view, { ...ANALYSIS_PARAMS, opponent: msg.opponent }, new Rng(msg.seed)),
+    search: new IsmctsSearch(msg.view, { ...(msg.params ?? ANALYSIS_PARAMS), opponent: msg.opponent }, new Rng(msg.seed)),
     started: performance.now(),
     maxMs: msg.maxMs,
   };

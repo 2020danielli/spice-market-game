@@ -29,6 +29,17 @@ export function Game({ setup, onExit, onRematch }: { setup: GameSetup; onExit: (
   const [showLog, setShowLog] = useState(true);
   const [opponentModel, setOpponentModel] = useState<OpponentModel>('strong');
   const hand = useHandOrder(r.players[0].hand);
+  const [scoreHidden, setScoreHidden] = useState<[boolean, boolean]>([false, false]);
+  const toggleScore = (p: PlayerId) => setScoreHidden((h) => (p === 0 ? [!h[0], h[1]] : [h[0], !h[1]]));
+  const [peeked, setPeeked] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => setPeeked(new Set()), [match.roundNumber]);
+  const peek = (key: string) =>
+    setPeeked((s) => {
+      const n = new Set(s);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
   useEffect(() => setSel(EMPTY_SELECTION), [match]);
 
   const myTurn = human !== null && phase === 'playing' && r.current === human && g.thinking === null && anim === null;
@@ -101,7 +112,7 @@ export function Game({ setup, onExit, onRematch }: { setup: GameSetup; onExit: (
 
   const analysisSide: PlayerId | null =
     !showAnalysis || phase !== 'playing' || anim !== null ? null : spectate ? r.current : myTurn ? 0 : null;
-  const analysisView = useMemo(() => (analysisSide === null ? null : playerView(r, analysisSide)), [r, analysisSide]);
+  const analysisView = useMemo(() => (analysisSide === null ? null : playerView(r, analysisSide, g.history)), [r, analysisSide, g.history]);
   const analysis = useAnalysis(analysisView, opponentModel);
   const pickMove = (m: Move) => {
     if (myTurn) setSel(selectionForMove(m, r, hand.cards));
@@ -140,6 +151,10 @@ export function Game({ setup, onExit, onRematch }: { setup: GameSetup; onExit: (
       <main className="board">
         <PlayerArea
           p={1}
+          scoreHidden={scoreHidden[1]}
+          onToggleScore={() => toggleScore(1)}
+          peeked={peeked}
+          onPeek={peek}
           name={names[1]}
           player={r.players[1]}
           isTurn={phase === 'playing' && r.current === 1}
@@ -173,6 +188,8 @@ export function Game({ setup, onExit, onRematch }: { setup: GameSetup; onExit: (
         {spectate ? (
           <PlayerArea
             p={0}
+            scoreHidden={scoreHidden[0]}
+            onToggleScore={() => toggleScore(0)}
             name={names[0]}
             player={r.players[0]}
             isTurn={phase === 'playing' && r.current === 0}
@@ -188,6 +205,8 @@ export function Game({ setup, onExit, onRematch }: { setup: GameSetup; onExit: (
         ) : (
           <PlayerArea
             p={0}
+            scoreHidden={scoreHidden[0]}
+            onToggleScore={() => toggleScore(0)}
             name={names[0]}
             player={r.players[0]}
             isTurn={phase === 'playing' && r.current === 0}

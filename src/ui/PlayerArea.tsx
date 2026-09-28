@@ -31,6 +31,12 @@ interface Props {
   handBadge?: Badge;
   selectedCamels?: number;
   onSetCamels?: (n: number) => void;
+  /** Hide the score: show only how many tokens were earned. */
+  scoreHidden?: boolean;
+  onToggleScore?: () => void;
+  /** Seen opponent cards the viewer has flipped face-up. */
+  peeked?: ReadonlySet<string>;
+  onPeek?: (key: string) => void;
 }
 
 export function PlayerArea(props: Props) {
@@ -42,7 +48,7 @@ export function PlayerArea(props: Props) {
 
   const card = (slot: HandSlot, selected: boolean, onClick?: () => void) => (
     <CardView
-      card={slot.card}
+      card={slot.known && !props.peeked?.has(slot.key) ? 'back' : slot.card}
       size={size}
       known={slot.known}
       selected={selected}
@@ -69,19 +75,35 @@ export function PlayerArea(props: Props) {
           </span>
         )}
         <span className="spacer" />
-        <div className="earned">
-          {player.goodsTokens.map((v, i) => (
-            <Coin key={i} good={player.soldGoods[i]} value={v} size={22} />
-          ))}
-          {player.bonusTokens.map((t, i) => (
-            <BonusCoin key={`b${i}`} size={t.size} value={revealBonus ? t.value : undefined} px={22} />
-          ))}
-          <span className="earned-tail" data-anchor={anchors.earned(p)} />
-        </div>
-        <span className="score-chip">
-          <b>{goodsPts + (revealBonus ? bonusPts : 0)}</b> ₹
-          {!revealBonus && player.bonusTokens.length > 0 && <span className="muted"> + {player.bonusTokens.length} bonus</span>}
-        </span>
+        {props.scoreHidden ? (
+          <div className="earned">
+            <span className="token-count">
+              {player.goodsTokens.length} commodity token{player.goodsTokens.length === 1 ? '' : 's'} · {player.bonusTokens.length} bonus token{player.bonusTokens.length === 1 ? '' : 's'}
+            </span>
+            <span className="earned-tail" data-anchor={anchors.earned(p)} />
+          </div>
+        ) : (
+          <>
+            <div className="earned">
+              {player.goodsTokens.map((v, i) => (
+                <Coin key={i} good={player.soldGoods[i]} value={v} size={22} />
+              ))}
+              {player.bonusTokens.map((t, i) => (
+                <BonusCoin key={`b${i}`} size={t.size} value={revealBonus ? t.value : undefined} px={22} />
+              ))}
+              <span className="earned-tail" data-anchor={anchors.earned(p)} />
+            </div>
+            <span className="score-chip">
+              <b>{goodsPts + (revealBonus ? bonusPts : 0)}</b> ₹
+              {!revealBonus && player.bonusTokens.length > 0 && <span className="muted"> + {player.bonusTokens.length} bonus</span>}
+            </span>
+          </>
+        )}
+        {props.onToggleScore && (
+          <button className="score-toggle" onClick={props.onToggleScore} title={props.scoreHidden ? 'Show score' : 'Hide score'}>
+            {props.scoreHidden ? 'Show score' : 'Hide score'}
+          </button>
+        )}
       </div>
       <div className="player-body">
         {props.cards && props.onReorder ? (
@@ -124,7 +146,7 @@ export function PlayerArea(props: Props) {
               const a = anchors.hand(p, s.key);
               return (
                 <div key={s.key} data-anchor={a} className={`hand-item ${hideCls(a)}`}>
-                  {card(s, false)}
+                  {card(s, false, s.known && props.onPeek ? () => props.onPeek!(s.key) : undefined)}
                 </div>
               );
             })}

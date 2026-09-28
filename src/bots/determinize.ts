@@ -4,7 +4,9 @@ import {
 } from '../engine';
 
 /** Samples a full RoundState consistent with everything the viewer knows (card counting included). */
-export function determinize(v: PlayerView, rng: Rng): RoundState {
+/** `oppHidden`: force the opponent's unseen cards (from an inference-weighted pool); the rest is shuffled into the deck. */
+/** `hiddenWeights`: per-card weight for each good (learned belief model): the opponent's unseen cards are weighted draws. */
+export function determinize(v: PlayerView, rng: Rng, oppHidden?: readonly Good[], hiddenWeights?: Record<Good, number>): RoundState {
   const remaining: Record<Card, number> = { ...DECK_COMPOSITION };
   for (const c of v.market) remaining[c]--;
   for (const g of v.hand) remaining[g]--;
@@ -16,9 +18,40 @@ export function determinize(v: PlayerView, rng: Rng): RoundState {
 
   const oppHand: Good[] = v.opp.known.slice();
   const deck: Card[] = [];
-  for (const c of rng.shuffle(pool)) {
-    if (c !== 'camel' && oppHand.length < v.opp.handSize) oppHand.push(c);
-    else deck.push(c);
+  if (oppHidden) {
+    const rest = pool.slice();
+    for (const g of oppHidden) {
+      const k = rest.indexOf(g);
+      if (k >= 0) rest.splice(k, 1);
+      oppHand.push(g);
+    }
+    deck.push(...rng.shuffle(rest));
+  } else if (hiddenWeights) {
+    const rest = pool.slice();
+    const slots = v.opp.handSize - oppHand.length;
+    for (let n = 0; n < slots; n++) {
+      let total = 0;
+      for (const c of rest) if (c !== 'camel') total += hiddenWeights[c as Good];
+      if (total <= 0) break;
+      let x = rng.next() * total;
+      let k = rest.length - 1;
+      for (let j = 0; j < rest.length; j++) {
+        if (rest[j] === 'camel') continue;
+        x -= hiddenWeights[rest[j] as Good];
+        if (x <= 0) {
+          k = j;
+          break;
+        }
+      }
+      oppHand.push(rest[k] as Good);
+      rest.splice(k, 1);
+    }
+    deck.push(...rng.shuffle(rest));
+  } else {
+    for (const c of rng.shuffle(pool)) {
+      if (c !== 'camel' && oppHand.length < v.opp.handSize) oppHand.push(c);
+      else deck.push(c);
+    }
   }
 
   const bonus = {} as Record<BonusSize, number[]>;

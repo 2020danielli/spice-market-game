@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyMove, applyMoveMut, checkMove, cloneRound, newRound, playerView, Rng, type RoundState } from '../engine';
 import { chooseMove } from './index';
 import { rolloutMove } from './rollout';
-import { IsmctsSearch } from './ismcts';
+import { IsmctsSearch, ismcts } from './ismcts';
 import { SEARCH_PARAMS } from './index';
 
 describe('rolloutMove', () => {
@@ -104,5 +104,13 @@ describe('IsmctsSearch memory bounds', () => {
     const s = new IsmctsSearch(playerView(r, 0), { ...params, cacheLimit: 10 }, new Rng(5));
     for (let i = 0; i < 300; i++) s.iterate();
     expect(s.cacheSize).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('ensemble determinization', () => {
+  it('plays legal moves with several fixed-world trees', () => {
+    const r = newRound(33, 0).round;
+    const m = ismcts(playerView(r, 0), { ...SEARCH_PARAMS.hard, timeMs: 1e9, maxIterations: 600, trees: 5 }, new Rng(1));
+    expect(checkMove(r, m)).toBeNull();
   });
 });

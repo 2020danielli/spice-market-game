@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TIER_INFO, type Tier } from '../bots';
 import {
   applyMove, checkMove, describeMove, finishRound, newMatch, playerView, scoreRound,
-  type MatchConfig, type Move, type MovePart, type PlayerId,
+  type HistoryEntry, type MatchConfig, type Move, type MovePart, type PlayerId,
 } from '../engine';
+import { SEARCH_PARAMS } from '../bots';
+import { DEFAULT_ENDGAME, isEndgame } from '../bots/endgame';
+import { ParallelBot } from '../worker/analysisClient';
 import { BotClient } from '../worker/botClient';
 import { planMoveAnimation, stageDuration, type MoveAnimation } from './animation';
 import { seatHandSlots, type HandSlot } from './handDisplay';
@@ -65,16 +68,20 @@ export function useMatch(setup: GameSetup) {
   scaleRef.current = timeScale;
   const botSeed = useRef(setup.seed * 31 + 7);
   const logId = useRef(0);
+  /** This round's moves, so bots can read the opponent's behaviour (belief model). */
+  const history = useRef<HistoryEntry[]>([]);
   const animating = useRef(false);
   const alive = useRef(true);
   const client = useMemo(() => new BotClient(), []);
+  const master = useMemo(() => new ParallelBot(), []);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
       client.dispose();
+      master.dispose();
     };
-  }, [client]);
+  }, [client, master]);
 
   const phase: Phase = match.winner !== null ? 'matchOver' : match.round.ended ? 'roundOver' : 'playing';
 
@@ -106,6 +113,7 @@ export function useMatch(setup: GameSetup) {
         if (!alive.current) return null;
         pushLog(match.roundNumber, before.current, plan.caption, text);
         opts.onCommit?.();
+        history.current = [...history.current, { before, move }];
         setMatch((m) => (m.round === before ? { ...m, round: after } : m));
         if (plan.refill.length > 0) {
           setAnim({ plan, stage: 'refill' });
@@ -128,6 +136,7 @@ export function useMatch(setup: GameSetup) {
         ? `Round ${match.roundNumber} tied — no seal.`
         : `Round ${match.roundNumber}: ${seatName(setup, res.sealWinner)} ${res.sealWinner === 0 && setup.seats[0].kind === 'human' ? 'win' : 'wins'} a Seal of Excellence (${res.scores[0]}–${res.scores[1]}).`;
     pushLog(match.roundNumber, null, [{ t: 'text', text }], text);
+    history.current = [];
     setMatch(finishRound(match));
   }, [match, setup, pushLog]);
 
@@ -144,8 +153,14 @@ export function useMatch(setup: GameSetup) {
     let timer: number | undefined;
     const started = performance.now();
     setThinking(current);
-    client
-      .request(seat.tier, playerView(match.round, current), botSeed.current++)
+    const view = playerView(match.round, current, history.current);
+    // Master searches on several workers, except in the endgame, where the exact solver (single worker) takes over.
+    const multi = seat.tier === 'master' || seat.tier === 'grandmaster' ? SEARCH_PARAMS[seat.tier] : null;
+    const parallel = multi && !(multi.endgame && isEndgame({ deck: view.deckSize, tokens: view.tokens }, DEFAULT_ENDGAME.maxDeck));
+    const decision = parallel
+      ? master.decide(view, multi, multi.timeMs)
+      : client.request(seat.tier, view, botSeed.current++);
+    decision
       .then((move) => {
         if (cancelled) return;
         const minDelay = spectate ? speedRef.current : BOT_MIN_THINK_MS;
@@ -162,10 +177,11 @@ export function useMatch(setup: GameSetup) {
     return () => {
       cancelled = true;
       client.cancel();
+      master.cancel();
       if (timer !== undefined) clearTimeout(timer);
       setThinking(null);
     };
-  }, [match, phase, anim, paused, stepToken, spectate, setup, client, play]);
+  }, [match, phase, anim, paused, stepToken, spectate, setup, client, master, play]);
 
   useEffect(() => {
     if (!spectate || paused || phase !== 'roundOver' || anim !== null) return;
@@ -175,6 +191,7 @@ export function useMatch(setup: GameSetup) {
 
   return {
     match, phase, anim, log, thinking, play, nextRound, spectate,
+    history: history.current,
     paused, setPaused, speedMs, setSpeedMs,
     step: () => setStepToken((t) => t + 1),
     timeScale,
